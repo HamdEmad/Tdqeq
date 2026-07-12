@@ -1,0 +1,12 @@
+# Tdqeq dependencies
+# Note: These mirror the dependencies found in pyproject.toml
+
+rapid_table>=0.1.0
+rapidocr_onnxruntime>=1.3.0
+doclayout_yolo>=0.0.2
+PyMuPDF>=1.22.0
+beautifulsoup4>=4.12.0
+loguru>=0.7.0
+huggingface-hub>=0.14.0
+pydantic-settings>=2.0.0
+numpy>=1.21.0
