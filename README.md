@@ -9,10 +9,7 @@ A powerful, highly optimized pipeline for Table Detection and Extraction from PD
 - **Batched GPU Inference**: Detects and parses multiple pages/regions in parallel for maximum hardware utilization.
 - **Automated Weight Management**: Automatically downloads and caches required YOLO weights from the Hugging Face Hub.
 - **Rich Export Options**: Easily convert extracted tables to JSON or Pandas DataFrames.
-- **Intelligent Caption Matching**:
-  - **Self-Healing Style Validation**: Learns the document's caption typographical signature (font size, alignment, bold ratio) to automatically filter out outlier headers and perform template-driven recovery.
-  - **Geometry & Boundary Guards**: Incorporates intervening table checks and below-caption boundary rules to prevent captions from crossing other tables or causing greedy-match cascades on multi-table pages.
-  - **Layout & Noise Robustness**: Automatically splits candidates on caption keywords, filters microscopic noise words (size `< 4.0`), and uses table-vs-figure keyword penalties to prevent mismatching figure titles.
+- **Intelligent Caption Matching**: Seamlessly combines AI-detected caption regions with dynamic stylistic heuristics to guarantee high-accuracy table caption extraction.
 
 ## Installation
 
@@ -20,12 +17,12 @@ Since `pyproject.toml` is fully configured, users can install `Tdqeq` directly f
 
 ### Option 1: Direct Install from GitHub (Easiest)
 ```bash
-pip install git+https://github.com/YourUsername/Tdqeq.git
+pip install git+https://github.com/HamdEmad/Tdqeq.git
 ```
 
 ### Option 2: Clone and Install
 ```bash
-git clone https://github.com/YourUsername/Tdqeq.git
+git clone https://github.com/HamdEmad/Tdqeq.git
 cd Tdqeq
 pip install .
 ```
@@ -61,10 +58,17 @@ tables = pipeline.run(pdf_path)
 
 print(f"Extracted {len(tables)} tables!")
 
-# 4. Export to Pandas DataFrame
-for table in tables:
+import json
+
+# 4. Export to Pandas DataFrame and JSON
+for i, table in enumerate(tables):
+    # Pandas DataFrame
     df = table.to_pandas()
     print(df)
+    
+    # JSON String
+    table_json = json.dumps(table.to_dict(), indent=2)
+    print(table_json)
 ```
 
 ## MCP Server Integration
