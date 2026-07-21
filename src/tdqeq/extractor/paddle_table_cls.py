@@ -9,7 +9,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 Modifications made by Tdqeq.
 """
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 import cv2
 import numpy as np
@@ -17,16 +17,68 @@ import onnxruntime
 from PIL import Image
 from tqdm import tqdm
 
+from tdqeq.exceptions import ModelNotLoadedError
+
+# Default HuggingFace model coordinates for table classification
+_HF_REPO_ID = "opendatalab/PDF-Extract-Kit-1.0"
+_HF_FILENAME = "models/TabCls/paddle_table_cls/PP-LCNet_x1_0_table_cls.onnx"
+_HF_REPO_TYPE = "model"
+
 
 class PaddleTableClsModel:
-    def __init__(self, weight: Union[str, Path]):
-        self.sess = onnxruntime.InferenceSession(weight)
+    def __init__(self, weight: Optional[Union[str, Path]] = None):
+        weight = self._resolve_weight(weight)
+        self.sess = onnxruntime.InferenceSession(str(weight))
         self.less_length = 256
         self.cw, self.ch = 224, 224
         self.std = [0.229, 0.224, 0.225]
         self.scale = 0.00392156862745098
         self.mean = [0.485, 0.456, 0.406]
         self.labels = ["WiredTable", "WirelessTable"]
+
+    @staticmethod
+    def _resolve_weight(weight: Optional[Union[str, Path]]) -> Path:
+        """
+        Resolve the table classification weight path.
+
+        If *weight* is given and points to an existing file, use it.
+        Otherwise download the model from HuggingFace Hub and return
+        the cached path.
+
+        Raises:
+            ModelNotLoadedError: if the given path does not exist, or if
+                                 downloading fails.
+        """
+        if weight is not None:
+            path = Path(weight)
+            if not path.exists():
+                raise ModelNotLoadedError(
+                    f"Table classification weights not found at: {path}. "
+                    "Either fix the path or omit 'weight' to auto-download."
+                )
+            return path
+
+        # Auto-download from HuggingFace Hub
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError as e:
+            raise ModelNotLoadedError(
+                "'huggingface_hub' is required for auto-downloading weights. "
+                "Install it with: pip install huggingface_hub"
+            ) from e
+
+        try:
+            cached = hf_hub_download(
+                repo_id=_HF_REPO_ID,
+                filename=_HF_FILENAME,
+                repo_type=_HF_REPO_TYPE,
+            )
+            return Path(cached)
+        except Exception as e:
+            raise ModelNotLoadedError(
+                f"Failed to download table classification weights from HuggingFace Hub: {e}. "
+                "Check your internet connection or supply a local 'weight' path."
+            ) from e
 
     def preprocess(self, input_img):
         # 放大图片，使其最短边长为256

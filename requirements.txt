@@ -10,3 +10,5 @@ loguru>=0.7.0
 huggingface-hub>=0.14.0
 pydantic-settings>=2.0.0
 numpy>=1.21.0
+openai>=1.0.0
+

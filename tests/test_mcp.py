@@ -16,7 +16,7 @@ async def test_mcp_tool_registration():
     # Find the tool and verify its input arguments schema
     extract_tool = next(t for t in tools if t.name == "extract_tables")
     assert "pdf_path" in extract_tool.inputSchema["properties"]
-    assert "accelerate" in extract_tool.inputSchema["properties"]
+    assert "mode" in extract_tool.inputSchema["properties"]
     assert "start_page" in extract_tool.inputSchema["properties"]
     assert "end_page" in extract_tool.inputSchema["properties"]
 

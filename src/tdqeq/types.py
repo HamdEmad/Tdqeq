@@ -158,13 +158,17 @@ class RawTable:
     page_number: int
     table_bbox: Tuple[float, float, float, float]
     page_size: Tuple[float, float]
-    caption: Optional[str]
-    cells: List[Cell]
-    row_count: int
-    col_count: int
     detection_confidence: float
     cls: str
+    cls_score: Optional[float]
+    caption: Optional[str]
     html: str
+    row_count: int
+    col_count: int
+    cells: List[Cell]
+    
+    
+    
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dictionary suitable for JSON export.
@@ -184,6 +188,7 @@ class RawTable:
             "detection_confidence": self.detection_confidence,
             "cls": self.cls,
             "html": self.html,
+            "cls_score": self.cls_score,
             "cells": [c.to_dict() for c in self.cells],
         }
 

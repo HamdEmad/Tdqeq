@@ -17,10 +17,6 @@ except ImportError:
     logger.error("The 'mcp' package is not installed. Run `pip install mcp`.")
     raise
 
-from tdqeq.loader.pdf_loader import PDFLoader
-from tdqeq.detector.table_detector import TableDetector
-from tdqeq.extractor.text_clipper import TextClipper
-from tdqeq.extractor.table_parser import TableParser
 from tdqeq.pipeline import Pipeline
 from tdqeq.config import settings
 
@@ -38,18 +34,10 @@ logger.info("Starting Tdqeq MCP Server...")
 logger.info("Loading heavy models into memory (this happens only once)...")
 
 try:
-    _loader = PDFLoader(dpi=settings.DEFAULT_DPI)
-    _detector = TableDetector(device="cpu")  # Modify to 'cuda' if user has GPU
-    _clipper = TextClipper()
-    _parser = TableParser(device="cpu", batch_size=settings.DEFAULT_BATCH_SIZE)
-
     _pipeline = Pipeline(
-        loader=_loader,
-        detector=_detector,
-        clipper=_clipper,
-        parser=_parser,
+        device="cpu",
         batch_size=settings.DEFAULT_BATCH_SIZE,
-        accelerate=False
+        mode="auto",
     )
     logger.info("Models loaded successfully. Server is ready.")
 except Exception as e:
@@ -73,7 +61,7 @@ def extract_tables(
     pdf_path: Optional[str] = None,
     pdf_bytes: Optional[str] = None,
     pdf_url: Optional[str] = None,
-    accelerate: bool = False,
+    mode: str = "auto",
     start_page: Optional[int] = None,
     end_page: Optional[int] = None,
 ) -> str:
@@ -84,7 +72,10 @@ def extract_tables(
         pdf_path: The absolute path to the local PDF file.
         pdf_bytes: Base64-encoded PDF document bytes.
         pdf_url: The URL to download the PDF document from.
-        accelerate: If true, forces the pipeline to use the faster SlaNet-Plus model instead of UniTable.
+        mode: Routing mode for model selection:
+              - "auto": auto select between faster mode and more accuracy mode based on the hardness of the table
+              - "tdqeq": faster but lower accuracy
+              - "tdqeq+": high accuracy but slowest
         start_page: The 0-indexed start page number to process (inclusive). If None, defaults to the first page.
         end_page: The 0-indexed end page number to process (inclusive). If None, defaults to the last page.
     
@@ -136,18 +127,18 @@ def extract_tables(
             e = end_page if end_page is not None else (total_pages - 1)
             page_range = (s, e)
 
-        # Temporarily apply accelerate flag if needed
-        original_accelerate = _pipeline._accelerate
-        if accelerate != original_accelerate:
-            _pipeline._accelerate = accelerate
-            _pipeline._parser._accelerate = accelerate
+        # Temporarily apply mode if needed
+        original_mode = _pipeline._mode
+        if mode != original_mode:
+            _pipeline._mode = mode
+            _pipeline._parser._mode = mode
             
         tables = _pipeline.run(pdf_path=pdf_source, page_range=page_range)
         
-        # Restore original accelerate flag
-        if accelerate != original_accelerate:
-            _pipeline._accelerate = original_accelerate
-            _pipeline._parser._accelerate = original_accelerate
+        # Restore original mode
+        if mode != original_mode:
+            _pipeline._mode = original_mode
+            _pipeline._parser._mode = original_mode
         
         payload = [t.to_dict() for t in tables]
         

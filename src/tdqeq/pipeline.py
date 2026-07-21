@@ -10,95 +10,154 @@ Flow:
 
 Usage:
     pipeline = Pipeline(
-        loader=loader,
-        detector=detector,
-        clipper=clipper,
-        parser=parser,
+        dpi=200,
+        device="cpu",
         batch_size=4,
-        accelerate=False,
+        mode="tdqeq",
     )
 
     # Run extraction — returns List[RawTable]
     tables = pipeline.run("path/to/document.pdf")
 
     # Convert to pandas DataFrame
-    df = RawTable.to_pandas(tables)
+    df = tables[0].to_pandas()
 """
 
-from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 from loguru import logger
 
+from tdqeq.config import settings
 from tdqeq.detector.table_detector import TableDetector
 from tdqeq.extractor.table_parser import TableParser
 from tdqeq.extractor.text_clipper import TextClipper
 from tdqeq.loader.pdf_loader import PDFLoader
-from tdqeq.types import ClippedRegion, PageBundle, RawTable
+from tdqeq.types import ClippedRegion, RawTable
 
 
 class Pipeline:
-    """
-    End-to-end PDF table extraction pipeline.
+    """End-to-end PDF table extraction pipeline.
 
-    All modules are injected at construction time — easy to test,
-    easy to swap individual components.
+    All heavy models are instantiated internally based on the parameters
+    provided. Weight paths are read from the environment / config file —
+    they are never accepted as direct arguments.
 
     Args:
-        loader:      PDFLoader instance
-        detector:    TableDetector instance
-        clipper:     TextClipper instance
-        parser:      TableParser instance
-        batch_size:  batch size for both YOLO detection and table parsing
-        accelerate:  if True, parser always uses the fast SlaNet-Plus model
+        dpi:        Resolution (dots-per-inch) used when rasterizing PDF pages.
+                    Higher DPI improves OCR quality at the cost of memory.
+                    Defaults to ``settings.DEFAULT_DPI``.
+        device:     Inference device for YOLO detection and table recognition.
+                    ``"cuda"`` for GPU, ``"cpu"`` for CPU.
+        batch_size: Batch size for both YOLO detection and rapid_table parsing.
+        mode:       Routing mode for model selection:
+
+                    - ``"auto"``:   auto select between faster mode and more
+                                    accuracy mode based on the hardness of the table
+                    - ``"tdqeq"``:  faster but lower accuracy
+                    - ``"tdqeq+"``: high accuracy but slowest
     """
+
+    _VALID_MODES = {"auto", "tdqeq", "tdqeq+"}
 
     def __init__(
         self,
+        dpi: int = settings.DEFAULT_DPI,
+        device: str = "cpu",
+        batch_size: int = settings.DEFAULT_BATCH_SIZE,
+        mode: str = "auto",
+    ) -> None:
+        if mode not in self._VALID_MODES:
+            raise ValueError(
+                f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}."
+            )
+
+        self._mode = mode
+        self._batch_size = batch_size
+
+        self._loader = PDFLoader(dpi=dpi)
+        self._detector = TableDetector(device=device)
+        self._clipper = TextClipper()
+        self._parser = TableParser(mode=mode, device=device, batch_size=batch_size)
+
+    # ------------------------------------------------------------------
+    # Advanced / testing
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _from_components(
+        cls,
         loader: PDFLoader,
         detector: TableDetector,
         clipper: TextClipper,
         parser: TableParser,
         batch_size: int = 4,
-        accelerate: bool = False,
-    ):
-        self._loader = loader
-        self._detector = detector
-        self._clipper = clipper
-        self._parser = parser
-        self._batch_size = batch_size
-        self._accelerate = accelerate
+        mode: str = "auto",
+    ) -> "Pipeline":
+        """Construct a Pipeline from pre-built component instances.
 
-        # Apply accelerate flag to parser via its public interface
-        self._parser.set_accelerate(accelerate)
+        Intended for unit testing and advanced scenarios where fine-grained
+        control over each component (e.g. mock injection) is required.
+        This is a private API — production code should use ``__init__``.
+
+        Args:
+            loader:     PDFLoader instance.
+            detector:   TableDetector instance.
+            clipper:    TextClipper instance.
+            parser:     TableParser instance (mode should match ``mode`` param).
+            batch_size: Batch size for detection and parsing.
+            mode:       Routing mode — must match the parser's mode.
+
+        Returns:
+            A fully wired Pipeline instance.
+        """
+        instance = object.__new__(cls)
+        instance._mode = mode
+        instance._batch_size = batch_size
+        instance._loader = loader
+        instance._detector = detector
+        instance._clipper = clipper
+        instance._parser = parser
+        # Ensure parser mode is in sync with pipeline mode
+        parser.set_mode(mode)
+        return instance
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    def set_mode(self, mode: str) -> None:
+        """Switch the table routing mode at runtime.
+
+        Args:
+            mode: One of ``"auto"``, ``"tdqeq"``, or ``"tdqeq+"``.
+        """
+        if mode not in self._VALID_MODES:
+            raise ValueError(
+                f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}."
+            )
+        self._mode = mode
+        self._parser.set_mode(mode)
 
     def run(
         self,
         pdf_path: Union[str, Path, bytes],
         page_range: Optional[tuple] = None,
     ) -> List[RawTable]:
-        """
-        Run the full extraction pipeline on one PDF.
+        """Run the full extraction pipeline on one PDF.
 
         Phase 1: Load all pages sequentially.
         Phase 2: Batch YOLO detection across all pages.
         Phase 3: Clip regions and batch parse.
-        Phase 4: Resolve captions (heuristic fallback + style validation).
-        Phase 5: Batch parse all regions.
 
         Args:
-            pdf_path:   path to the PDF file (str or Path) or raw PDF bytes
-            page_range: optional (start, end) 0-indexed inclusive.
-                        None = all pages.
+            pdf_path:   Path to the PDF file (str or Path) or raw PDF bytes.
+            page_range: Optional (start, end) 0-indexed inclusive page range.
+                        ``None`` processes all pages.
 
         Returns:
-            List[RawTable] — all extracted tables, sorted by page then
-            vertical position.  Empty list if no tables found.
+            List of :class:`~tdqeq.types.RawTable` sorted by page then vertical
+            position. Empty list if no tables are found.
         """
         # ── Phase 1: Load all pages ───────────────────────────────────
         pages = list(self._loader.stream(pdf_path, page_range=page_range))
@@ -119,13 +178,12 @@ class Pipeline:
             return []
 
         # ── Phase 3: Clip regions ─────────────────────────────────────
-        all_regions = []
+        all_regions: List[ClippedRegion] = []
 
         for page, detections in zip(pages, all_page_detections):
             if not detections:
                 logger.debug(f"  No tables on page {page.page_number}")
                 continue
-
             regions = self._clipper.clip_all(detections, page)
             all_regions.extend(regions)
 
