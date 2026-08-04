@@ -20,6 +20,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.ipynb_checkpoints/
 *.ipynb
 MANIFEST
 
@@ -31,6 +32,7 @@ MANIFEST
 htmlcov/
 
 # Environments
+.ipynb
 .env
 .venv
 env/
