@@ -1,7 +1,8 @@
+import html
 import numpy as np
 from loguru import logger
 from bs4 import BeautifulSoup
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from rapid_table import ModelType, RapidTable, RapidTableInput
 
 from tdqeq.exceptions import ExtractionError, ModelNotLoadedError
@@ -29,7 +30,7 @@ class TableParser:
         batch_size: Batch size for rapid_table and classification inference
     """
 
-    _VALID_MODES = {"auto", "tdqeq", "tdqeq+"}
+    _VALID_MODES = {"auto", "tdqeq", "tdqeq+", "tdqeq++"}
 
     def __init__(
         self,
@@ -47,6 +48,7 @@ class TableParser:
         self._cls: Optional[PaddleTableClsModel] = None
         self._slanet: Optional[RapidTable] = None
         self._unitable: Optional[RapidTable] = None
+        self._unet: Optional[Any] = None
 
         self._load_models_for_mode(mode)
 
@@ -101,51 +103,114 @@ class TableParser:
         # ── Stage 2: Classify (auto mode only) ────────────────────────
         cls_info: Dict[int, Tuple[TableType, float]] = self._classify_all(valid)
 
-        # ── Stage 3: Route regions to models ──────────────────────────
-        # groups maps model instance → list of (original_idx, region)
-        groups: Dict[int, List[Tuple[int, ClippedRegion]]] = {}
-
-        for idx, region in valid:
-            table_type, cls_score = cls_info.get(idx, (TableType.WIRELESS, 100.0))
-            model = self._route(table_type, cls_score)
-            groups.setdefault(id(model), []).append((idx, region))
-
-        # Store the model object keyed by its id for later retrieval
-        model_by_id: Dict[int, RapidTable] = {}
-        for idx, region in valid:
-            table_type, cls_score = cls_info.get(idx, (TableType.WIRELESS, 100.0))
-            model = self._route(table_type, cls_score)
-            model_by_id[id(model)] = model
-
-        # ── Stage 4: Inference per model group ────────────────────────
         results: Dict[int, RawTable] = {}
 
-        for model_id, group in groups.items():
-            model = model_by_id[model_id]
-            indices = [idx for idx, _ in group]
-            grp_regions = [r for _, r in group]
+        if self._mode not in ("auto", "tdqeq++"):
+            # ── Stage 3: Route regions to models ──────────────────────────
+            # groups maps model instance → list of (original_idx, region)
+            groups: Dict[int, List[Tuple[int, ClippedRegion]]] = {}
+
+            for idx, region in valid:
+                table_type, cls_score = cls_info.get(idx, (TableType.WIRELESS, 100.0))
+                model = self._route(table_type, cls_score)
+                groups.setdefault(id(model), []).append((idx, region))
+
+            # Store the model object keyed by its id for later retrieval
+            model_by_id: Dict[int, RapidTable] = {}
+            for idx, region in valid:
+                table_type, cls_score = cls_info.get(idx, (TableType.WIRELESS, 100.0))
+                model = self._route(table_type, cls_score)
+                model_by_id[id(model)] = model
+
+            # ── Stage 4: Inference per model group ────────────────────────
+            for model_id, group in groups.items():
+                model = model_by_id[model_id]
+                indices = [idx for idx, _ in group]
+                grp_regions = [r for _, r in group]
+
+                try:
+                    htmls, cells_bboxes = self._run_model(
+                        model=model,
+                        images=[r.table_image for r in grp_regions],
+                        ocr_results=[ocr_map[idx] for idx in indices],
+                        tables_header=[r.caption_text for r in grp_regions],
+                    )
+                except ExtractionError:
+                    continue
+
+                for i, (idx, region) in enumerate(group):
+                    try:
+                        raw_table = self._build_raw_table(
+                            region=region,
+                            html=htmls[i],
+                            cell_bboxes=cells_bboxes[i],
+                            model=model,
+                            cls_score=cls_info.get(idx, (TableType.WIRELESS, None))[1],
+                        )
+                        results[idx] = raw_table
+                    except Exception:
+                        continue
+        else:
+            # ── Stage 3: Hybrid workflow (auto or tdqeq++) ────────────────
+            first_stage_model = self._slanet if self._mode == "auto" else self._unitable
+            first_stage_label = "SlaNetPlus" if self._mode == "auto" else "UniTable"
+
+            indices = [idx for idx, _ in valid]
+            grp_regions = [r for _, r in valid]
 
             try:
-                htmls, cells_bboxes = self._run_model(
-                    model=model,
+                htmls_first, cells_bboxes_first = self._run_model(
+                    model=first_stage_model,
                     images=[r.table_image for r in grp_regions],
                     ocr_results=[ocr_map[idx] for idx in indices],
                     tables_header=[r.caption_text for r in grp_regions],
                 )
             except ExtractionError:
-                continue
+                return []
 
-            for i, (idx, region) in enumerate(group):
+            for i, (idx, region) in enumerate(valid):
+                table_type, cls_score = cls_info.get(idx, (TableType.WIRELESS, None))
+                use_unet = False
+                if self._unet is not None:
+                    score_for_routing = cls_score if cls_score is not None else 100.0
+                    if table_type == TableType.WIRED or score_for_routing < WIRELESS_UNITABLE_THRESHOLD:
+                        use_unet = True
+
+                final_html = htmls_first[i]
+                final_bboxes = cells_bboxes_first[i]
+                model_label = first_stage_label
+
+                if use_unet:
+                    try:
+                        bboxes_arr, texts_tup, scores_tup = ocr_map[idx]
+                        ocr_result = []
+                        for k in range(len(texts_tup)):
+                            ocr_result.append([bboxes_arr[k], html.escape(texts_tup[k]), scores_tup[k]])
+
+                        ref_html, ref_bboxes = self._unet.predict(
+                            input_img=region.table_image,
+                            ocr_result=ocr_result,
+                            wireless_html_code=htmls_first[i]
+                        )
+                        if ref_html:
+                            final_html = ref_html
+                            if ref_bboxes is not None:
+                                final_bboxes = ref_bboxes
+                                model_label = "UnetTable"
+                    except Exception as exc:
+                        logger.warning(f"U-Net table model refinement failed for page {region.detection.page_number}: {exc}")
+
                 try:
                     raw_table = self._build_raw_table(
                         region=region,
-                        html=htmls[i],
-                        cell_bboxes=cells_bboxes[i],
-                        model=model,
-                        cls_score=cls_info.get(idx, (TableType.WIRELESS, None))[1],
+                        html=final_html,
+                        cell_bboxes=final_bboxes,
+                        model=first_stage_model if model_label == first_stage_label else "UnetTable",
+                        cls_score=cls_score,
                     )
                     results[idx] = raw_table
-                except Exception:
+                except Exception as exc:
+                    logger.warning(f"Failed to build RawTable for page {region.detection.page_number}: {exc}")
                     continue
 
         # ── Stage 5: Sort by page then vertical position ──────────────
@@ -239,7 +304,7 @@ class TableParser:
             Mapping of original_index → (TableType, cls_score).
             Empty dict when classification is skipped or fails.
         """
-        if self._mode != "auto" or self._cls is None:
+        if self._mode not in ("auto", "tdqeq++") or self._cls is None:
             return {}
 
         img_info_list = [
@@ -251,7 +316,7 @@ class TableParser:
         except Exception as exc:
             logger.warning(
                 f"Batch table classification failed: {exc}. "
-                "Falling back to default routing (all tables → SlaNet-Plus)."
+                "Falling back to default routing."
             )
             return {}
 
@@ -356,11 +421,14 @@ class TableParser:
         cells = self._reanchor_cells(cells, region.bbox_pdf, region.image_dpi)
         self._assign_words_to_cells(cells, region.table_words)
 
-        model_label = (
-            str(model.cfg.model_type.value)
-            if hasattr(model.cfg.model_type, "value")
-            else str(model.cfg.model_type)
-        )
+        if isinstance(model, str):
+            model_label = model
+        else:
+            model_label = (
+                str(model.cfg.model_type.value)
+                if hasattr(model.cfg.model_type, "value")
+                else str(model.cfg.model_type)
+            )
 
         return RawTable(
             page_number=region.detection.page_number,
@@ -536,15 +604,32 @@ class TableParser:
         self._cls = None
         self._slanet = None
         self._unitable = None
+        self._unet = None
 
         if mode == "auto":
             self._cls = self._load_cls_model()      # None if weights are missing
             self._slanet = self._load_model(ModelType.SLANETPLUS)
             self._unitable = self._load_model(ModelType.UNITABLE)
+            self._unet = self._load_unet_model()
+        elif mode == "tdqeq++":
+            self._cls = self._load_cls_model()      # None if weights are missing
+            self._unitable = self._load_model(ModelType.UNITABLE)
+            self._unet = self._load_unet_model()
         elif mode == "tdqeq":
             self._slanet = self._load_model(ModelType.SLANETPLUS)
         elif mode == "tdqeq+":
             self._unitable = self._load_model(ModelType.UNITABLE)
+
+    def _load_unet_model(self) -> Optional[Any]:
+        try:
+            from tdqeq.extractor.unet_table import UnetTableModel
+            return UnetTableModel()
+        except Exception as exc:
+            logger.warning(
+                f"Failed to load UnetTableModel: {exc}. "
+                "Bypassing U-Net wired table reconstruction — fallback to SLANet-Plus only."
+            )
+            return None
 
     def _load_model(self, model_type: ModelType) -> RapidTable:
         """Instantiate a RapidTable model.

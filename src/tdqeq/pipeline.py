@@ -56,9 +56,10 @@ class Pipeline:
                                     accuracy mode based on the hardness of the table
                     - ``"tdqeq"``:  faster but lower accuracy
                     - ``"tdqeq+"``: high accuracy but slowest
+                    - ``"tdqeq++"``: high accuracy with U-Net wired refinement
     """
 
-    _VALID_MODES = {"auto", "tdqeq", "tdqeq+"}
+    _VALID_MODES = {"auto", "tdqeq", "tdqeq+", "tdqeq++"}
 
     def __init__(
         self,
@@ -130,7 +131,7 @@ class Pipeline:
         """Switch the table routing mode at runtime.
 
         Args:
-            mode: One of ``"auto"``, ``"tdqeq"``, or ``"tdqeq+"``.
+            mode: One of ``"auto"``, ``"tdqeq"``, ``"tdqeq+"``, or ``"tdqeq++"``.
         """
         if mode not in self._VALID_MODES:
             raise ValueError(

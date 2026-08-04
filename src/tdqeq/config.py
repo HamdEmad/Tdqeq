@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Model Weights
     YOLO_WEIGHTS_PATH: Optional[str] = None  # If None, it will auto-download
     TABLE_CLS_WEIGHTS_PATH: Optional[str] = None  # If None, it will auto-download
+    TABLE_UNET_WEIGHTS_PATH: Optional[str] = None  # If None, it will auto-download
 
     # Logging
     LOG_LEVEL: str = "INFO"

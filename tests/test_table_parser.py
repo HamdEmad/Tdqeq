@@ -58,19 +58,29 @@ def make_load_model_side_effect(mock_slanet, mock_unitable):
 # Tests
 # ---------------------------------------------------------------------------
 
+@patch("tdqeq.extractor.table_parser.TableParser._load_unet_model")
 @patch("tdqeq.extractor.table_parser.TableParser._load_cls_model")
 @patch("tdqeq.extractor.table_parser.TableParser._load_model")
-def test_table_parser_batch_classification(mock_load_model, mock_load_cls_model):
-    """Auto mode: wired table routes to UniTable, wireless+high-confidence to SlaNetPlus."""
+def test_table_parser_batch_classification(mock_load_model, mock_load_cls_model, mock_load_unet_model):
+    """Auto mode: wired table refines via U-Net, wireless+high-confidence stays SlaNetPlus."""
     mock_unitable = MagicMock()
     mock_unitable.cfg.model_type.value = "UniTable"
     mock_unitable.return_value = DummyResult()
 
     mock_slanet = MagicMock()
     mock_slanet.cfg.model_type.value = "SlaNetPlus"
-    mock_slanet.return_value = DummyResult()
+    def slanet_side_effect(images, *args, **kwargs):
+        res = MagicMock()
+        res.pred_htmls = ["<table><tr><td>cell1</td></tr></table>"] * len(images)
+        res.cell_bboxes = [np.array([[[0, 0], [10, 0], [10, 10], [0, 10]]], dtype=np.float32)] * len(images)
+        return res
+    mock_slanet.side_effect = slanet_side_effect
 
     mock_load_model.side_effect = make_load_model_side_effect(mock_slanet, mock_unitable)
+
+    mock_unet = MagicMock()
+    mock_unet.predict.return_value = ("<table><tr><td>cell1-unet</td></tr></table>", np.array([[[0, 0], [10, 0], [10, 10], [0, 10]]], dtype=np.float32))
+    mock_load_unet_model.return_value = mock_unet
 
     mock_cls = MagicMock()
     def batch_predict_side_effect(img_info_list, batch_size=16):
@@ -79,21 +89,22 @@ def test_table_parser_batch_classification(mock_load_model, mock_load_cls_model)
     mock_cls.batch_predict.side_effect = batch_predict_side_effect
     mock_load_cls_model.return_value = mock_cls
 
-    # All three models are preloaded on init for "auto" mode
     parser = TableParser(device="cpu")
     assert parser._cls is mock_cls
     assert parser._slanet is mock_slanet
-    assert parser._unitable is mock_unitable
+    assert parser._unet is mock_unet
 
     results = parser.parse_all([make_dummy_region(0), make_dummy_region(1)])
 
     assert len(results) == 2
-    # page 0: WiredTable → UniTable
+    # page 0: WiredTable → UnetTable
     assert results[0].cls_score == 98.0
-    assert results[0].cls == "UniTable"
+    assert results[0].cls == "UnetTable"
+    assert "cell1-unet" in results[0].html
     # page 1: WirelessTable, score 85 >= 80 → SlaNetPlus
     assert results[1].cls_score == 85.0
     assert results[1].cls == "SlaNetPlus"
+    assert "cell1-unet" not in results[1].html
 
     mock_cls.batch_predict.assert_called_once()
     args, _ = mock_cls.batch_predict.call_args
@@ -101,9 +112,10 @@ def test_table_parser_batch_classification(mock_load_model, mock_load_cls_model)
     assert args[0][0]["wired_table_img"] is not None
 
 
+@patch("tdqeq.extractor.table_parser.TableParser._load_unet_model")
 @patch("tdqeq.extractor.table_parser.TableParser._load_cls_model")
 @patch("tdqeq.extractor.table_parser.TableParser._load_model")
-def test_table_parser_batch_classification_fallback(mock_load_model, mock_load_cls_model):
+def test_table_parser_batch_classification_fallback(mock_load_model, mock_load_cls_model, mock_load_unet_model):
     """Auto mode: cls batch_predict failure falls back to SlaNetPlus (wireless default)."""
     mock_unitable = MagicMock()
     mock_unitable.cfg.model_type.value = "UniTable"
@@ -111,9 +123,17 @@ def test_table_parser_batch_classification_fallback(mock_load_model, mock_load_c
 
     mock_slanet = MagicMock()
     mock_slanet.cfg.model_type.value = "SlaNetPlus"
-    mock_slanet.return_value = DummyResult()
+    def slanet_side_effect(images, *args, **kwargs):
+        res = MagicMock()
+        res.pred_htmls = ["<table><tr><td>cell1</td></tr></table>"] * len(images)
+        res.cell_bboxes = [np.array([[[0, 0], [10, 0], [10, 10], [0, 10]]], dtype=np.float32)] * len(images)
+        return res
+    mock_slanet.side_effect = slanet_side_effect
 
     mock_load_model.side_effect = make_load_model_side_effect(mock_slanet, mock_unitable)
+
+    mock_unet = MagicMock()
+    mock_load_unet_model.return_value = mock_unet
 
     mock_cls = MagicMock()
     mock_cls.batch_predict.side_effect = ValueError("Input image smaller than target size")
@@ -175,3 +195,54 @@ def test_table_parser_mode_tdqeq_plus(mock_load_model, mock_load_cls_model):
     results = parser.parse_all([make_dummy_region(0)])
     assert len(results) == 1
     assert results[0].cls == "UniTable"
+
+
+@patch("tdqeq.extractor.table_parser.TableParser._load_unet_model")
+@patch("tdqeq.extractor.table_parser.TableParser._load_cls_model")
+@patch("tdqeq.extractor.table_parser.TableParser._load_model")
+def test_table_parser_mode_tdqeq_double_plus(mock_load_model, mock_load_cls_model, mock_load_unet_model):
+    """tdqeq++ mode: UniTable is run first, then refines using U-Net for wired tables."""
+    mock_unitable = MagicMock()
+    mock_unitable.cfg.model_type.value = "UniTable"
+    def unitable_side_effect(images, *args, **kwargs):
+        res = MagicMock()
+        res.pred_htmls = ["<table><tr><td>cell1-unitable</td></tr></table>"] * len(images)
+        res.cell_bboxes = [np.array([[[0, 0], [10, 0], [10, 10], [0, 10]]], dtype=np.float32)] * len(images)
+        return res
+    mock_unitable.side_effect = unitable_side_effect
+
+    mock_slanet = MagicMock()
+    mock_slanet.cfg.model_type.value = "SlaNetPlus"
+    mock_slanet.return_value = DummyResult()
+
+    mock_load_model.side_effect = make_load_model_side_effect(mock_slanet, mock_unitable)
+
+    mock_unet = MagicMock()
+    mock_unet.predict.return_value = ("<table><tr><td>cell1-unet</td></tr></table>", np.array([[[0, 0], [10, 0], [10, 10], [0, 10]]], dtype=np.float32))
+    mock_load_unet_model.return_value = mock_unet
+
+    mock_cls = MagicMock()
+    def batch_predict_side_effect(img_info_list, batch_size=16):
+        img_info_list[0]["table_res"] = {"cls_label": "WiredTable",    "cls_score": 98.0}
+        img_info_list[1]["table_res"] = {"cls_label": "WirelessTable", "cls_score": 85.0}
+    mock_cls.batch_predict.side_effect = batch_predict_side_effect
+    mock_load_cls_model.return_value = mock_cls
+
+    parser = TableParser(mode="tdqeq++", device="cpu")
+    assert parser._cls is mock_cls
+    assert parser._unitable is mock_unitable
+    assert parser._unet is mock_unet
+    assert parser._slanet is None
+
+    results = parser.parse_all([make_dummy_region(0), make_dummy_region(1)])
+
+    assert len(results) == 2
+    # page 0: WiredTable → refined using UnetTable
+    assert results[0].cls_score == 98.0
+    assert results[0].cls == "UnetTable"
+    assert "cell1-unet" in results[0].html
+    # page 1: WirelessTable, score 85 >= 80 → remains UniTable
+    assert results[1].cls_score == 85.0
+    assert results[1].cls == "UniTable"
+    assert "cell1-unitable" in results[1].html
+

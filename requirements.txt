@@ -11,4 +11,6 @@ huggingface-hub>=0.14.0
 pydantic-settings>=2.0.0
 numpy>=1.21.0
 openai>=1.0.0
+scipy>=1.8.0
+scikit-image>=0.20.0
 
