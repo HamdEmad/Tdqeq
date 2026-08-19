@@ -1,110 +1,93 @@
 # Tdqeq
 
-A powerful, highly optimized pipeline for Table Detection and Extraction from PDF documents. `Tdqeq` orchestrates state-of-the-art vision models (YOLO, SlaNet-Plus, UniTable) to accurately identify tables, extract their text and layout, and seamlessly reconstruct them into structured data (JSON, Pandas DataFrames).
+> An enterprise-grade, high-throughput pipeline for unstructured document table extraction and normalization.
 
-## Features
+Tdqeq orchestrates a multi-stage vision and NLP pipeline to accurately detect, extract, and reconstruct complex tabular data from PDF documents. By decoupling layout detection (YOLOv10), table parsing (SlaNet-Plus / UniTable), and schema normalization (LLMs), Tdqeq provides a highly resilient and scalable solution for transforming unstructured documents into structured `JSON` or `Pandas DataFrames`.
 
-- **End-to-End Pipeline**: Handles everything from raw PDFs to structured tabular data.
-- **Smart Model Routing**: Dynamically routes tables to the most efficient parsing model based on structural complexity and classification confidence.
-- **Batched GPU Inference**: Detects and parses multiple pages/regions in parallel for maximum hardware utilization.
-- **Automated Weight Management**: Automatically downloads and caches required YOLO weights from the Hugging Face Hub.
-- **Rich Export Options**: Easily convert extracted tables to JSON or Pandas DataFrames.
-- **Intelligent Caption Matching**: Seamlessly combines AI-detected caption regions with dynamic stylistic heuristics to guarantee high-accuracy table caption extraction.
+## Core Capabilities
+
+- **Adaptive Model Routing**: Dynamically analyzes structural complexity and classification confidence to route tables to the optimal parsing model (e.g., fast processing via SlaNet-Plus vs. high-fidelity reasoning via UniTable).
+- **High-Throughput Inference**: Built from the ground up for batched GPU inference, enabling parallel processing of multi-page documents to maximize hardware utilization.
+- **Agentic Integration (MCP)**: Features a native Model Context Protocol (MCP) server, allowing persistent, in-memory execution and seamless integration into agentic workflows (e.g., Claude Desktop, Cursor, Hermes).
+- **Finetuning & Data Curation**: Ships with comprehensive utilities and Colab notebooks for generating supervised fine-tuning (SFT) datasets, facilitating domain adaptation for models like Qwen2.5-3B-Instruct.
+
+## System Architecture
+
+The extraction pipeline operates in five distinct, loosely coupled stages:
+
+1. **Rasterization & Extraction (`PDFLoader`)**: Rasterizes PDF pages at configurable DPIs while simultaneously extracting word-level bounding boxes and text blocks via PyMuPDF.
+2. **Layout Detection (`TableDetector`)**: Utilizes `doclayout_yolo` (YOLOv10) to accurately identify table boundaries and associated caption regions.
+3. **Spatial Intersection (`TextClipper`)**: Computes intersections between page-level text bounding boxes and table regions to isolate precise cellular text content.
+4. **Structural Parsing (`TableParser`)**: Classifies the table topology (Wired vs. Wireless) and reconstructs the HTML structure and cellular grid using `RapidTable`. Text is deterministically mapped to cells via center-point geometric matching.
 
 ## Installation
 
-Since `pyproject.toml` is fully configured, users can install `Tdqeq` directly from GitHub using `pip`, or by cloning the repository.
+The package is fully configured via `pyproject.toml` and supports direct installation from the repository.
 
-### Option 1: Direct Install from GitHub (Easiest)
+### Direct Installation
 ```bash
 pip install git+https://github.com/HamdEmad/Tdqeq.git
 ```
 
-### Option 2: Clone and Install
+### Local Development
 ```bash
 git clone https://github.com/HamdEmad/Tdqeq.git
 cd Tdqeq
-pip install .
+pip install -e .
 ```
 
 ## Quick Start
 
+The core `Pipeline` abstraction handles all model instantiation, weight management, and memory allocation internally.
+
 ```python
-from tdqeq.loader.pdf_loader import PDFLoader
-from tdqeq.detector.table_detector import TableDetector
-from tdqeq.extractor.text_clipper import TextClipper
-from tdqeq.extractor.table_parser import TableParser
 from tdqeq.pipeline import Pipeline
-from tdqeq.types import RawTable
-
-# 1. Initialize components (Weights will auto-download if not provided)
-loader = PDFLoader(dpi=150)
-detector = TableDetector(device="cpu") # Use "cuda" for GPU
-clipper = TextClipper()
-parser = TableParser(device="cpu", batch_size=4)
-
-# 2. Build the Pipeline
-pipeline = Pipeline(
-    loader=loader,
-    detector=detector,
-    clipper=clipper,
-    parser=parser,
-    batch_size=4
-)
-
-# 3. Extract Tables
-pdf_path = "path/to/your/document.pdf"
-tables = pipeline.run(pdf_path)
-
-print(f"Extracted {len(tables)} tables!")
-
 import json
 
-# 4. Export to Pandas DataFrame and JSON
-for i, table in enumerate(tables):
-    # Pandas DataFrame
+# 1. Initialize the Pipeline
+# Weights are automatically resolved and cached from the Hugging Face Hub.
+pipeline = Pipeline(
+    dpi=150,           # Rasterization resolution
+    device="cuda",     # Hardware acceleration ('cuda' or 'cpu')
+    batch_size=4,      # Batched inference for optimal VRAM utilization
+    mode="auto"        # Smart routing: auto, tdqeq (fast), tdqeq+ (accurate)
+)
+
+# 2. Execute Extraction
+pdf_path = "path/to/your/document.pdf"
+tables = pipeline.run(pdf_path)
+print(f"Successfully extracted {len(tables)} tables.")
+
+# 3. Downstream Processing
+for table in tables:
+    # Convert to standard Pandas DataFrame for data science workflows
     df = table.to_pandas()
-    print(df)
     
-    # JSON String
-    table_json = json.dumps(table.to_dict(), indent=2)
-    print(table_json)
+    # Export to strict JSON for API responses
+    payload = json.dumps(table.to_dict(), indent=2)
 ```
 
 ## MCP Server Integration
 
-`Tdqeq` includes a built-in Model Context Protocol (MCP) server that runs the table extraction pipeline persistently. This prevents loading the heavy OCR and table parsing models into memory on every run.
+To avoid the latency overhead of repeatedly loading heavy vision models into memory, Tdqeq provides a persistent Model Context Protocol (MCP) server.
 
-### Running the MCP Server
-
-You can run the MCP server directly using its console script entry point:
-
+### Execution
+Start the server using the provided console script:
 ```bash
 tdqeq-mcp
 ```
+*Alternatively, run the module directly: `python -m tdqeq.mcp_server`*
 
-Or run the module via Python:
+### Client Configuration
 
-```bash
-python -m tdqeq.mcp_server
-```
-
-The server uses the `stdio` transport to communicate.
-
-### Connecting to Claude Desktop / Cursor
-
-To connect this MCP server to **Claude Desktop**, add the following configuration to your `claude_desktop_config.json`:
-
+**Claude Desktop / Cursor**
+Add the following to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "tdqeq": {
       "command": "python",
-      "args": [
-        "-u",
-        "-m",
-        "tdqeq.mcp_server"
-      ],
+      "args": ["-u", "-m", "tdqeq.mcp_server"],
       "env": {
         "PYTHONUNBUFFERED": "1"
       }
@@ -114,52 +97,27 @@ To connect this MCP server to **Claude Desktop**, add the following configuratio
 ```
 
 > [!NOTE]
-> Make sure the active Python environment where `tdqeq` is installed is on your system PATH, or specify the absolute path to your Python executable (e.g. `C:\Users\<username>\.venv\Scripts\python.exe`).
+> Ensure the Python environment containing `tdqeq` is accessible via your system PATH, or provide the absolute path to the Python executable.
 
-### Connecting to Hermes Agent
-
-To connect this MCP server to **Hermes Agent**, manually edit your configuration file:
-
-* **Windows**: `C:\Users\<username>\.hermes\config.yaml`
-* **macOS / Linux**: `~/.hermes/config.yaml`
-
-Add the `tdqeq` server configuration under the `mcp_servers` section:
-
-```yaml
-mcp_servers:
-  tdqeq:
-    command: "python"
-    args:
-      - "-u"
-      - "-m"
-      - "tdqeq.mcp_server"
-    env:
-      PYTHONUNBUFFERED: "1"
-```
-
-Restart Hermes Agent or run the `/reload-mcp` command inside a chat session to load the new server.
-
-### Available Tools
+### API Surface
 
 #### `extract_tables`
+Extracts and reconstructs tables from a local PDF document.
 
-Extracts tables from a local PDF document.
+**Parameters**:
+- `pdf_path` *(string, optional)*: Absolute path to the source PDF.
+- `pdf_bytes` *(string, optional)*: Base64-encoded PDF document bytes.
+- `pdf_url` *(string, optional)*: URL to download the PDF document from.
+- `mode` *(string, optional, default: "auto")*: Routing mode (`"auto"`, `"tdqeq"`, `"tdqeq+"`, `"tdqeq++"`).
+- `start_page` *(integer, optional, default: null)*: 0-indexed start page (inclusive).
+- `end_page` *(integer, optional, default: null)*: 0-indexed end page (inclusive).
 
-* **Arguments**:
-  * `pdf_path` (string, required): The absolute path to the local PDF file.
-  * `accelerate` (boolean, optional, default: `false`): If `true`, forces the pipeline to use the faster SlaNet-Plus model instead of UniTable.
-  * `start_page` (integer, optional, default: `null`): The 0-indexed start page number to process (inclusive).
-  * `end_page` (integer, optional, default: `null`): The 0-indexed end page number to process (inclusive).
-* **Returns**:
-  A JSON string containing the list of extracted tables, their page numbers, bounding boxes, HTML structures, and individual cell details.
+> [!IMPORTANT]
+> At least one of `pdf_path`, `pdf_bytes`, or `pdf_url` must be provided.
 
-## Architecture
-
-1. **PDFLoader**: Rasterizes pages and extracts word-level bounding boxes (CPU bound).
-2. **TableDetector**: Uses `doclayout_yolo` to find table and caption bounding boxes.
-3. **TextClipper**: Intersects page-level words with table bounding boxes.
-4. **TableParser**: Classifies the table (Wired vs. Wireless) and routes it to `RapidTable` (SlaNet-Plus or UniTable) to predict HTML structure and cell bounds. Words are mapped to cells via center-point geometry.
+**Returns**:
+A JSON payload containing the extracted tables, spatial bounding boxes, HTML DOM representations, and structured cellular data.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This software is distributed under the [MIT License](LICENSE).

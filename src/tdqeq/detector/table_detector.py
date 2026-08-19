@@ -6,9 +6,12 @@ from tqdm import tqdm
 
 from tdqeq.config import settings
 from tdqeq.detector import detection_cleaner, image_enhancer
+from tdqeq.detector.caption_heuristic import (
+    compute_document_baseline,
+    find_heuristic_caption_bbox,
+)
 from tdqeq.exceptions import DetectionError, ModelNotLoadedError
 from tdqeq.types import Detection, PageBundle
-from tdqeq.detector.caption_heuristic import compute_document_baseline, find_heuristic_caption_bbox
 
 # ---------------------------------------------------------------------------
 # Default HuggingFace model coordinates
@@ -189,8 +192,7 @@ class TableDetector:
 
         # Clean each page's results independently
         return [
-            self._clean(all_raw[i], pages[i], baseline_style)
-            for i in range(len(pages))
+            self._clean(all_raw[i], pages[i], baseline_style) for i in range(len(pages))
         ]
 
     # ------------------------------------------------------------------
@@ -256,10 +258,10 @@ class TableDetector:
     ) -> List[Detection]:
         """Delegate to detection_cleaner. Returns typed Detection objects."""
         detections = detection_cleaner.clean(raw, page, baseline_style)
-        
+
         # Heuristic fallback for un-captioned tables
         all_table_bboxes = [d.bbox for d in detections if d.label.value == "table"]
-        
+
         for det in detections:
             if det.label.value == "table" and det.matched_caption_bbox is None:
                 # Need table bbox in PDF-space. YOLO bbox is in pixel-space.
@@ -267,12 +269,12 @@ class TableDetector:
                 scale = 72.0 / page.image_dpi
                 tx0, ty0, tx1, ty1 = det.bbox
                 table_bbox_pdf = (tx0 * scale, ty0 * scale, tx1 * scale, ty1 * scale)
-                
+
                 all_table_bboxes_pdf = [
-                    (b[0]*scale, b[1]*scale, b[2]*scale, b[3]*scale)
+                    (b[0] * scale, b[1] * scale, b[2] * scale, b[3] * scale)
                     for b in all_table_bboxes
                 ]
-                
+
                 heuristic_bbox_pdf = find_heuristic_caption_bbox(
                     page_words=page.words,
                     table_bbox_pdf=table_bbox_pdf,
@@ -280,16 +282,16 @@ class TableDetector:
                     page_size=page.page_size,
                     baseline_style=baseline_style,
                 )
-                
+
                 if heuristic_bbox_pdf:
                     # Convert PDF-space bbox back to pixel-space for matched_caption_bbox
                     inv_scale = page.image_dpi / 72.0
                     hx0, hy0, hx1, hy1 = heuristic_bbox_pdf
                     det.matched_caption_bbox = (
-                        hx0 * inv_scale, 
-                        hy0 * inv_scale, 
-                        hx1 * inv_scale, 
-                        hy1 * inv_scale
+                        hx0 * inv_scale,
+                        hy0 * inv_scale,
+                        hx1 * inv_scale,
+                        hy1 * inv_scale,
                     )
-                    
+
         return detections

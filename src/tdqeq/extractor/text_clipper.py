@@ -59,11 +59,13 @@ class TextClipper:
             bbox_pdf = self._to_pdf_bbox(detection.bbox, page.image_dpi)
             table_words = self._clip_words(page.words, bbox_pdf)
             table_image = self._clip_image(page.image, detection.bbox)
-            
+
             caption_words = None
             caption = None
             if detection.matched_caption_bbox is not None:
-                caption_pdf_bbox = self._to_pdf_bbox(detection.matched_caption_bbox, page.image_dpi)
+                caption_pdf_bbox = self._to_pdf_bbox(
+                    detection.matched_caption_bbox, page.image_dpi
+                )
                 caption_words = self._clip_words(page.words, caption_pdf_bbox)
                 if caption_words:
                     caption = self._words_to_text(caption_words)
@@ -189,10 +191,10 @@ class TextClipper:
 
         # 3. Create boolean masks using the padded boundaries
         inside_mask = (
-            (coords[:, 0] >= allowed_x0) &  # w.x0 is within margin left
-            (coords[:, 1] >= allowed_y0) &  # w.y0 is within margin top
-            (coords[:, 2] <= allowed_x1) &  # w.x1 is within margin right
-            (coords[:, 3] <= allowed_y1)    # w.y1 is within margin bottom
+            (coords[:, 0] >= allowed_x0)  # w.x0 is within margin left
+            & (coords[:, 1] >= allowed_y0)  # w.y0 is within margin top
+            & (coords[:, 2] <= allowed_x1)  # w.x1 is within margin right
+            & (coords[:, 3] <= allowed_y1)  # w.y1 is within margin bottom
         )
 
         # 4. Use the mask to grab matching words while preserving original order

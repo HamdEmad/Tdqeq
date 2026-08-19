@@ -1,30 +1,29 @@
 import html
 import logging
-import os
 import time
 import traceback
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List, Optional, Union, Dict, Any, Tuple
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
-from PIL import Image
-from loguru import logger
+import numpy as np
 from bs4 import BeautifulSoup
+from loguru import logger
+from PIL import Image
 
 from tdqeq.config import settings
 from tdqeq.exceptions import ModelNotLoadedError
 
-from .span_pre_proc import calculate_contrast
-from .table_structure_unet import TSRUnet
 from .table_recover import TableRecover
+from .table_structure_unet import TSRUnet
 from .utils import InputType, LoadImage
 from .utils_table_recover import (
+    box_4_2_poly_to_box_4_1,
+    gather_ocr_list_by_row,
     match_ocr_cell,
     plot_html_table,
-    box_4_2_poly_to_box_4_1,
     sorted_ocr_boxes,
-    gather_ocr_list_by_row,
 )
 
 _HF_REPO_ID = "opendatalab/PDF-Extract-Kit-1.0"
@@ -201,8 +200,8 @@ def count_table_cells_physical(html_code):
     if not html_code:
         return 0
     html_lower = html_code.lower()
-    td_count = html_lower.count('<td')
-    th_count = html_lower.count('<th')
+    td_count = html_lower.count("<td")
+    th_count = html_lower.count("<th")
     return td_count + th_count
 
 
@@ -212,7 +211,9 @@ class UnetTableModel:
         wired_input_args = WiredTableInput(model_path=model_path)
         self.wired_table_model = WiredTableRecognition(wired_input_args)
 
-    def predict(self, input_img, ocr_result, wireless_html_code) -> Tuple[str, Optional[np.ndarray]]:
+    def predict(
+        self, input_img, ocr_result, wireless_html_code
+    ) -> Tuple[str, Optional[np.ndarray]]:
         if isinstance(input_img, Image.Image):
             np_img = np.asarray(input_img)
         elif isinstance(input_img, np.ndarray):
@@ -240,26 +241,49 @@ class UnetTableModel:
                 if ocr_res[1] in wired_html_code:
                     wired_text_count += 1
 
-            wireless_soup = BeautifulSoup(wireless_html_code, 'html.parser') if wireless_html_code else BeautifulSoup("", 'html.parser')
-            wired_soup = BeautifulSoup(wired_html_code, 'html.parser') if wired_html_code else BeautifulSoup("", 'html.parser')
-            wireless_blank_count = sum(1 for cell in wireless_soup.find_all(['td', 'th']) if not cell.text.strip())
-            wired_blank_count = sum(1 for cell in wired_soup.find_all(['td', 'th']) if not cell.text.strip())
+            wireless_soup = (
+                BeautifulSoup(wireless_html_code, "html.parser")
+                if wireless_html_code
+                else BeautifulSoup("", "html.parser")
+            )
+            wired_soup = (
+                BeautifulSoup(wired_html_code, "html.parser")
+                if wired_html_code
+                else BeautifulSoup("", "html.parser")
+            )
+            wireless_blank_count = sum(
+                1
+                for cell in wireless_soup.find_all(["td", "th"])
+                if not cell.text.strip()
+            )
+            wired_blank_count = sum(
+                1 for cell in wired_soup.find_all(["td", "th"]) if not cell.text.strip()
+            )
 
             wireless_non_blank_count = wireless_len - wireless_blank_count
             wired_non_blank_count = wired_len - wired_blank_count
             switch_flag = False
             if wireless_non_blank_count > wired_non_blank_count:
-                wired_table_scale = round(wired_non_blank_count ** 0.5)
-                wired_scale_plus_2_cols = wired_non_blank_count + (wired_table_scale * 2)
-                wired_scale_squared_plus_2_rows = wired_table_scale * (wired_table_scale + 2)
-                if (wireless_non_blank_count + 3) >= max(wired_scale_plus_2_cols, wired_scale_squared_plus_2_rows):
+                wired_table_scale = round(wired_non_blank_count**0.5)
+                wired_scale_plus_2_cols = wired_non_blank_count + (
+                    wired_table_scale * 2
+                )
+                wired_scale_squared_plus_2_rows = wired_table_scale * (
+                    wired_table_scale + 2
+                )
+                if (wireless_non_blank_count + 3) >= max(
+                    wired_scale_plus_2_cols, wired_scale_squared_plus_2_rows
+                ):
                     switch_flag = True
 
             if (
                 switch_flag
                 or (0 <= gap_of_len <= 5 and wired_len <= round(wireless_len * 0.75))
                 or (gap_of_len == 0 and wired_len <= 4)
-                or (wired_text_count <= wireless_text_count * 0.6 and  wireless_text_count >=10)
+                or (
+                    wired_text_count <= wireless_text_count * 0.6
+                    and wireless_text_count >= 10
+                )
             ):
                 # Fall back to wireless HTML and cell bboxes
                 return wireless_html_code, None

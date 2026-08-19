@@ -2,10 +2,10 @@ import math
 
 import cv2
 import numpy as np
-from scipy.spatial import distance as dist
-from skimage import measure
-from skimage import __version__ as skimage_version
 from packaging import version
+from scipy.spatial import distance as dist
+from skimage import __version__ as skimage_version
+from skimage import measure
 
 
 def transform_preds(coords, center, scale, output_size, rot=0):
@@ -164,9 +164,7 @@ def adjust_lines(lines, alph=50, angle=50):
             if i != j:
                 x3, y3, x4, y4 = lines[j]
                 cx2, cy2 = (x3 + x4) / 2, (y3 + y4) / 2
-                if (x3 < cx1 < x4 or y3 < cy1 < y4) or (
-                    x1 < cx2 < x2 or y1 < cy2 < y2
-                ):
+                if (x3 < cx1 < x4 or y3 < cy1 < y4) or (x1 < cx2 < x2 or y1 < cy2 < y2):
                     continue
                 else:
                     r = sqrt((x1, y1), (x3, y3))

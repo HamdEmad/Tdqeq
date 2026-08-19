@@ -22,8 +22,6 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "numpy>=1.21.0",
     "mcp>=1.0.0",
-    "openai>=1.0.0",
-    "json-repair>=0.1.0",
 ]
 
 [project.optional-dependencies]

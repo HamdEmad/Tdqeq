@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+
 def calculate_contrast(img, img_mode) -> float:
     """
     Calculate the contrast of a given image.
@@ -8,10 +9,10 @@ def calculate_contrast(img, img_mode) -> float:
     :param img_mode: image color channels, 'rgb' or 'bgr'
     :return: image contrast value
     """
-    if img_mode == 'rgb':
+    if img_mode == "rgb":
         # Convert RGB image to grayscale
         gray_img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    elif img_mode == 'bgr':
+    elif img_mode == "bgr":
         # Convert BGR image to grayscale
         gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:

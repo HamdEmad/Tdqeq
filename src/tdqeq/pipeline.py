@@ -69,9 +69,7 @@ class Pipeline:
         mode: str = "auto",
     ) -> None:
         if mode not in self._VALID_MODES:
-            raise ValueError(
-                f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}."
-            )
+            raise ValueError(f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}.")
 
         self._mode = mode
         self._batch_size = batch_size
@@ -134,9 +132,7 @@ class Pipeline:
             mode: One of ``"auto"``, ``"tdqeq"``, ``"tdqeq+"``, or ``"tdqeq++"``.
         """
         if mode not in self._VALID_MODES:
-            raise ValueError(
-                f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}."
-            )
+            raise ValueError(f"Invalid mode {mode!r}. Choose from {self._VALID_MODES}.")
         self._mode = mode
         self._parser.set_mode(mode)
 

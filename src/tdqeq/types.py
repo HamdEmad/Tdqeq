@@ -166,9 +166,6 @@ class RawTable:
     row_count: int
     col_count: int
     cells: List[Cell]
-    
-    
-    
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dictionary suitable for JSON export.

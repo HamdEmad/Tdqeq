@@ -45,3 +45,4 @@ ENV/
 # Project specific temporary/test output files
 test_output.json
 extracted_*.json
+src/tdqeq/normalizer/

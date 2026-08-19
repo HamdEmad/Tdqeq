@@ -1,15 +1,16 @@
 """
 Copyright (c) 2024 OpenDataLab. All rights reserved.
 
-This file contains code derived from the MinerU project, 
+This file contains code derived from the MinerU project,
 licensed under the Apache License, Version 2.0.
 You may obtain a copy of the License at
 http://www.apache.org/licenses/LICENSE-2.0
 
 Modifications made by Tdqeq.
 """
+
 from pathlib import Path
-from typing import Union, Optional
+from typing import Optional, Union
 
 import cv2
 import numpy as np

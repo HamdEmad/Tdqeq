@@ -3,11 +3,12 @@ MCP Server for Tdqeq.
 Runs the Tdqeq pipeline persistently so that heavy models only load once.
 """
 
-import json
 import base64
+import json
 import urllib.request
 from pathlib import Path
 from typing import Optional
+
 from loguru import logger
 
 # Import FastMCP
@@ -17,8 +18,8 @@ except ImportError:
     logger.error("The 'mcp' package is not installed. Run `pip install mcp`.")
     raise
 
-from tdqeq.pipeline import Pipeline
 from tdqeq.config import settings
+from tdqeq.pipeline import Pipeline
 
 # Initialize FastMCP Server
 mcp = FastMCP("TdqeqServer")
@@ -40,18 +41,17 @@ try:
         mode="auto",
     )
     logger.info("Models loaded successfully. Server is ready.")
-except Exception as e:
+except Exception:
     logger.exception("Failed to initialize Tdqeq models.")
     raise
 
+
 def _download_pdf(url: str) -> bytes:
     """Download PDF bytes from a URL with a standard User-Agent header."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req) as response:
         return response.read()
+
 
 # ---------------------------------------------------------------------------
 # MCP Tools
@@ -67,7 +67,7 @@ def extract_tables(
 ) -> str:
     """
     Extracts tables from a PDF document (provided via file path, Base64 bytes, or URL) using the Tdqeq pipeline.
-    
+
     Args:
         pdf_path: The absolute path to the local PDF file.
         pdf_bytes: Base64-encoded PDF document bytes.
@@ -78,13 +78,13 @@ def extract_tables(
               - "tdqeq+": high accuracy but slowest
         start_page: The 0-indexed start page number to process (inclusive). If None, defaults to the first page.
         end_page: The 0-indexed end page number to process (inclusive). If None, defaults to the last page.
-    
+
     Returns:
         A JSON string containing the extracted tables, their HTML structures, and cell text.
     """
     pdf_source = None
     log_source = ""
-    
+
     if pdf_url is not None:
         try:
             pdf_source = _download_pdf(pdf_url)
@@ -104,15 +104,20 @@ def extract_tables(
         pdf_source = pdf_file
         log_source = f"path: {pdf_path}"
     else:
-        return json.dumps({"error": "Either pdf_path, pdf_bytes, or pdf_url must be provided."})
-        
+        return json.dumps(
+            {"error": "Either pdf_path, pdf_bytes, or pdf_url must be provided."}
+        )
+
     try:
-        logger.info(f"MCP Request: Extracting tables from {log_source} (pages: {start_page} to {end_page})")
-        
+        logger.info(
+            f"MCP Request: Extracting tables from {log_source} (pages: {start_page} to {end_page})"
+        )
+
         # Build page_range tuple if start_page or end_page is provided
         page_range = None
         if start_page is not None or end_page is not None:
             import fitz
+
             try:
                 if isinstance(pdf_source, bytes):
                     with fitz.open(stream=pdf_source, filetype="pdf") as doc:
@@ -121,8 +126,10 @@ def extract_tables(
                     with fitz.open(str(pdf_source)) as doc:
                         total_pages = len(doc)
             except Exception as e:
-                return json.dumps({"error": f"Failed to open PDF to resolve page count: {e}"})
-            
+                return json.dumps(
+                    {"error": f"Failed to open PDF to resolve page count: {e}"}
+                )
+
             s = start_page if start_page is not None else 0
             e = end_page if end_page is not None else (total_pages - 1)
             page_range = (s, e)
@@ -132,18 +139,18 @@ def extract_tables(
         if mode != original_mode:
             _pipeline._mode = mode
             _pipeline._parser._mode = mode
-            
+
         tables = _pipeline.run(pdf_path=pdf_source, page_range=page_range)
-        
+
         # Restore original mode
         if mode != original_mode:
             _pipeline._mode = original_mode
             _pipeline._parser._mode = original_mode
-        
+
         payload = [t.to_dict() for t in tables]
-        
+
         return json.dumps(payload, ensure_ascii=False, indent=2)
-        
+
     except Exception as e:
         logger.exception(f"Error extracting tables from {log_source}")
         return json.dumps({"error": str(e)})
@@ -151,7 +158,8 @@ def extract_tables(
 
 def main():
     """Entry point for the CLI script."""
-    mcp.run(transport='stdio')
+    mcp.run(transport="stdio")
+
 
 if __name__ == "__main__":
     main()

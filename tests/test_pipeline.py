@@ -2,14 +2,13 @@
 test_pipeline.py
 End-to-end verification for the refactored Tdqeq pipeline using pytest.
 """
+
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+
+import pytest
 
 from tdqeq.pipeline import Pipeline
-from tdqeq.types import RawTable
-from tdqeq.config import settings
 
 PDF_PATH = Path("test_input.pdf")
 
@@ -35,7 +34,9 @@ def extracted_tables(pipeline):
 def test_pipeline_extraction(extracted_tables):
     """Verify that tables are extracted."""
     assert len(extracted_tables) > 0, "No tables extracted!"
-    assert len(extracted_tables) == 13, f"Expected 13 tables, found {len(extracted_tables)}"
+    assert len(extracted_tables) == 13, (
+        f"Expected 13 tables, found {len(extracted_tables)}"
+    )
 
 
 def test_json_serialization(extracted_tables, tmp_path):

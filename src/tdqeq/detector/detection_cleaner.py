@@ -2,16 +2,17 @@
 Cleans and formats YOLO detections into typed objects.
 
 Copyright (c) 2024 OpenDataLab. All rights reserved.
-Portions of this file (layout filtering and geometry helpers) 
+Portions of this file (layout filtering and geometry helpers)
 are derived from the MinerU project, licensed under the Apache License, Version 2.0.
 You may obtain a copy of the License at
 http://www.apache.org/licenses/LICENSE-2.0
 """
+
 from typing import Dict, List, Tuple
 
 from tdqeq.detector.boxbase import get_minbox_if_overlap_by_ratio
-from tdqeq.types import Detection, DetectionLabel, PageBundle
 from tdqeq.detector.caption_heuristic import is_style_different
+from tdqeq.types import Detection, DetectionLabel, PageBundle
 
 # ---------------------------------------------------------------------------
 # Category ID mapping — specific to doclayout_yolo model
@@ -28,7 +29,7 @@ CAPTION_CANDIDATE_IDS = [CAPTION_ID_PRIMARY, CAPTION_ID_FALLBACK]
 # At runtime this is scaled to pixels using image_dpi from PageBundle.
 # ---------------------------------------------------------------------------
 MAX_CAPTION_DISTANCE_PT = 80  # PDF points — relaxed for spacious layouts
-CAPTION_BBOX_PADDING_PX = 1   # pixels to expand matched caption bbox on each side
+CAPTION_BBOX_PADDING_PX = 1  # pixels to expand matched caption bbox on each side
 
 # Priority weight for above vs. below captions (lower = preferred)
 # Within each position tier, CAPTION class wins over TITLE, which wins over TEXT.
@@ -37,7 +38,7 @@ _ABOVE_PRIORITY = 0
 # Category priority — lower is better
 _CATEGORY_PRIORITY = {
     CAPTION_ID_PRIMARY: 0,  # CAPTION class — highest confidence
-    CAPTION_ID_FALLBACK: 1, # TITLE class — medium confidence
+    CAPTION_ID_FALLBACK: 1,  # TITLE class — medium confidence
 }
 
 
@@ -65,13 +66,19 @@ def clean(
     """
     table_dicts, caption_dicts = _run_layout_filter(raw)
 
-    table_detections = _to_detections(table_dicts, page.page_number, DetectionLabel.TABLE)
+    table_detections = _to_detections(
+        table_dicts, page.page_number, DetectionLabel.TABLE
+    )
     caption_detections = _to_detections(
-        caption_dicts, page.page_number, DetectionLabel.CAPTION,
+        caption_dicts,
+        page.page_number,
+        DetectionLabel.CAPTION,
         raw_dicts=caption_dicts,
     )
 
-    matched = _match_captions(table_detections, caption_detections, page, baseline_style)
+    matched = _match_captions(
+        table_detections, caption_detections, page, baseline_style
+    )
 
     return matched
 
@@ -114,7 +121,7 @@ def _to_detections(
     raw_dicts: List[Dict] = None,
 ) -> List[Detection]:
     """Convert raw YOLO dicts to typed Detection objects.
-    
+
     If raw_dicts is provided, the category_id is stored on the Detection
     so caption matching can use tiered priority.
     """
@@ -226,10 +233,14 @@ def _match_captions(
             cap_x0_pdf = cx0 * scale
             cap_x1_pdf = cx1 * scale
             cap_y0_pdf = cy0 * scale
-            
+
             caption_words = [
-                w for w in page.words
-                if cap_y0_pdf <= w.y1 and w.y0 <= cap_y1_pdf and cap_x0_pdf <= w.x1 and w.x0 <= cap_x1_pdf
+                w
+                for w in page.words
+                if cap_y0_pdf <= w.y1
+                and w.y0 <= cap_y1_pdf
+                and cap_x0_pdf <= w.x1
+                and w.x0 <= cap_x1_pdf
             ]
 
             # Enforce style difference
@@ -237,9 +248,7 @@ def _match_captions(
                 continue
 
             # Determine category priority
-            cat_priority = _CATEGORY_PRIORITY.get(
-                getattr(cap, '_category_id', -1), 1
-            )
+            cat_priority = _CATEGORY_PRIORITY.get(getattr(cap, "_category_id", -1), 1)
 
             # Prefer: category, then nearest gap
             if (cat_priority, gap) < (best_cat_priority, best_distance):

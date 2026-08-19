@@ -1,7 +1,7 @@
 import copy
 import math
 import os
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -9,15 +9,15 @@ from skimage import measure
 
 from .utils import OrtInferSession, resize_img
 from .utils_table_line_rec import (
-    get_table_line,
-    final_adjust_lines,
-    min_area_rect_box,
-    draw_lines,
     adjust_lines,
+    draw_lines,
+    final_adjust_lines,
+    get_table_line,
+    min_area_rect_box,
 )
 from .utils_table_recover import (
-    sorted_ocr_boxes,
     box_4_2_poly_to_box_4_1,
+    sorted_ocr_boxes,
 )
 
 
@@ -42,8 +42,12 @@ class TSRUnet:
         self.inp_height = 1024
         self.inp_width = 1024
 
-        config["intra_op_num_threads"] = get_op_num_threads("MINERU_INTRA_OP_NUM_THREADS")
-        config["inter_op_num_threads"] = get_op_num_threads("MINERU_INTER_OP_NUM_THREADS")
+        config["intra_op_num_threads"] = get_op_num_threads(
+            "MINERU_INTRA_OP_NUM_THREADS"
+        )
+        config["inter_op_num_threads"] = get_op_num_threads(
+            "MINERU_INTER_OP_NUM_THREADS"
+        )
 
         self.session = OrtInferSession(config)
 
@@ -129,9 +133,7 @@ class TSRUnet:
         vert_k = int(math.sqrt(h) * 1.2)
         hkernel = cv2.getStructuringElement(cv2.MORPH_RECT, (hors_k, 1))
         vkernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, vert_k))
-        vpred = cv2.morphologyEx(
-            vpred, cv2.MORPH_CLOSE, vkernel, iterations=1
-        )
+        vpred = cv2.morphologyEx(vpred, cv2.MORPH_CLOSE, vkernel, iterations=1)
         if morph_close:
             hpred = cv2.morphologyEx(hpred, cv2.MORPH_CLOSE, hkernel, iterations=1)
         colboxes = get_table_line(vpred, axis=1, lineW=col)

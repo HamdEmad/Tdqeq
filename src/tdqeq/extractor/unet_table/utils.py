@@ -3,7 +3,7 @@ import traceback
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import List, Union, Dict, Any, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Union
 
 import cv2
 import loguru

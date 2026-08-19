@@ -8,6 +8,7 @@ Tdqeq: A powerful PDF table detection and extraction pipeline.
 # when not explicitly specified.
 try:
     import torch
+
     original_load = torch.load
 
     def safe_load(*args, **kwargs):

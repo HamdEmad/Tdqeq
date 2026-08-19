@@ -1,14 +1,15 @@
 import html
-import numpy as np
-from loguru import logger
-from bs4 import BeautifulSoup
 from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+from bs4 import BeautifulSoup
+from loguru import logger
 from rapid_table import ModelType, RapidTable, RapidTableInput
 
-from tdqeq.exceptions import ExtractionError, ModelNotLoadedError
-from tdqeq.types import Cell, ClippedRegion, RawTable, TableType, Word
 from tdqeq.config import settings
+from tdqeq.exceptions import ExtractionError, ModelNotLoadedError
 from tdqeq.extractor.paddle_table_cls import PaddleTableClsModel
+from tdqeq.types import Cell, ClippedRegion, RawTable, TableType, Word
 
 # cls_score below this threshold for a WirelessTable → prefer UniTable
 WIRELESS_UNITABLE_THRESHOLD = 80
@@ -173,7 +174,10 @@ class TableParser:
                 use_unet = False
                 if self._unet is not None:
                     score_for_routing = cls_score if cls_score is not None else 100.0
-                    if table_type == TableType.WIRED or score_for_routing < WIRELESS_UNITABLE_THRESHOLD:
+                    if (
+                        table_type == TableType.WIRED
+                        or score_for_routing < WIRELESS_UNITABLE_THRESHOLD
+                    ):
                         use_unet = True
 
                 final_html = htmls_first[i]
@@ -185,12 +189,18 @@ class TableParser:
                         bboxes_arr, texts_tup, scores_tup = ocr_map[idx]
                         ocr_result = []
                         for k in range(len(texts_tup)):
-                            ocr_result.append([bboxes_arr[k], html.escape(texts_tup[k]), scores_tup[k]])
+                            ocr_result.append(
+                                [
+                                    bboxes_arr[k],
+                                    html.escape(texts_tup[k]),
+                                    scores_tup[k],
+                                ]
+                            )
 
                         ref_html, ref_bboxes = self._unet.predict(
                             input_img=region.table_image,
                             ocr_result=ocr_result,
-                            wireless_html_code=htmls_first[i]
+                            wireless_html_code=htmls_first[i],
                         )
                         if ref_html:
                             final_html = ref_html
@@ -198,19 +208,25 @@ class TableParser:
                                 final_bboxes = ref_bboxes
                                 model_label = "UnetTable"
                     except Exception as exc:
-                        logger.warning(f"U-Net table model refinement failed for page {region.detection.page_number}: {exc}")
+                        logger.warning(
+                            f"U-Net table model refinement failed for page {region.detection.page_number}: {exc}"
+                        )
 
                 try:
                     raw_table = self._build_raw_table(
                         region=region,
                         html=final_html,
                         cell_bboxes=final_bboxes,
-                        model=first_stage_model if model_label == first_stage_label else "UnetTable",
+                        model=first_stage_model
+                        if model_label == first_stage_label
+                        else "UnetTable",
                         cls_score=cls_score,
                     )
                     results[idx] = raw_table
                 except Exception as exc:
-                    logger.warning(f"Failed to build RawTable for page {region.detection.page_number}: {exc}")
+                    logger.warning(
+                        f"Failed to build RawTable for page {region.detection.page_number}: {exc}"
+                    )
                     continue
 
         # ── Stage 5: Sort by page then vertical position ──────────────
@@ -244,9 +260,9 @@ class TableParser:
 
         bboxes, texts = [], []
         for w in words:
-            left   = (w.x0 - origin_x) * scale
-            top    = (w.y0 - origin_y) * scale
-            right  = (w.x1 - origin_x) * scale
+            left = (w.x0 - origin_x) * scale
+            top = (w.y0 - origin_y) * scale
+            right = (w.x1 - origin_x) * scale
             bottom = (w.y1 - origin_y) * scale
             bboxes.append([[left, top], [right, top], [right, bottom], [left, bottom]])
             texts.append(w.text)
@@ -393,7 +409,9 @@ class TableParser:
         # Embed caption as a CSS class on the <table> tag when available
         for i, header in enumerate(tables_header):
             if header:
-                htmls[i] = htmls[i].replace("<table", f'<table class="{header.strip()}"')
+                htmls[i] = htmls[i].replace(
+                    "<table", f'<table class="{header.strip()}"'
+                )
 
         return htmls, cells_bboxes
 
@@ -435,13 +453,13 @@ class TableParser:
             table_bbox=region.bbox_pdf,
             page_size=region.page_size,
             detection_confidence=region.detection.confidence,
-            caption=region.caption_text, 
+            caption=region.caption_text,
             cls=model_label,
             cls_score=cls_score,
             html=html,
             cells=cells,
             row_count=max((c.row for c in cells), default=0) + 1,
-            col_count=max((c.col for c in cells), default=0) + 1
+            col_count=max((c.col for c in cells), default=0) + 1,
         )
 
     # ------------------------------------------------------------------
@@ -545,7 +563,9 @@ class TableParser:
         if not cells or not table_words:
             return
 
-        def _midpoint_bounds(ranges: Dict[int, List[float]]) -> Dict[int, Tuple[float, float]]:
+        def _midpoint_bounds(
+            ranges: Dict[int, List[float]],
+        ) -> Dict[int, Tuple[float, float]]:
             sorted_keys = sorted(ranges)
             bounds = {}
             for i, k in enumerate(sorted_keys):
@@ -565,8 +585,16 @@ class TableParser:
         for cell in cells:
             x0, y0, x1, y1 = cell.bbox
             c, r = cell.col, cell.row
-            col_ranges[c] = [min(col_ranges[c][0], x0), max(col_ranges[c][1], x1)] if c in col_ranges else [x0, x1]
-            row_ranges[r] = [min(row_ranges[r][0], y0), max(row_ranges[r][1], y1)] if r in row_ranges else [y0, y1]
+            col_ranges[c] = (
+                [min(col_ranges[c][0], x0), max(col_ranges[c][1], x1)]
+                if c in col_ranges
+                else [x0, x1]
+            )
+            row_ranges[r] = (
+                [min(row_ranges[r][0], y0), max(row_ranges[r][1], y1)]
+                if r in row_ranges
+                else [y0, y1]
+            )
 
         col_bounds = _midpoint_bounds(col_ranges)
         row_bounds = _midpoint_bounds(row_ranges)
@@ -607,12 +635,12 @@ class TableParser:
         self._unet = None
 
         if mode == "auto":
-            self._cls = self._load_cls_model()      # None if weights are missing
+            self._cls = self._load_cls_model()  # None if weights are missing
             self._slanet = self._load_model(ModelType.SLANETPLUS)
             self._unitable = self._load_model(ModelType.UNITABLE)
             self._unet = self._load_unet_model()
         elif mode == "tdqeq++":
-            self._cls = self._load_cls_model()      # None if weights are missing
+            self._cls = self._load_cls_model()  # None if weights are missing
             self._unitable = self._load_model(ModelType.UNITABLE)
             self._unet = self._load_unet_model()
         elif mode == "tdqeq":
@@ -623,6 +651,7 @@ class TableParser:
     def _load_unet_model(self) -> Optional[Any]:
         try:
             from tdqeq.extractor.unet_table import UnetTableModel
+
             return UnetTableModel()
         except Exception as exc:
             logger.warning(
