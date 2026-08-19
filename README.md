@@ -1,24 +1,26 @@
 # Tdqeq
 
-> An enterprise-grade, high-throughput pipeline for unstructured document table extraction and normalization.
+> A high-throughput, vision-based pipeline for detecting and extracting structured tables — with their captions — from PDF documents.
 
-Tdqeq orchestrates a multi-stage vision and NLP pipeline to accurately detect, extract, and reconstruct complex tabular data from PDF documents. By decoupling layout detection (YOLOv10), table parsing (SlaNet-Plus / UniTable), and schema normalization (LLMs), Tdqeq provides a highly resilient and scalable solution for transforming unstructured documents into structured `JSON` or `Pandas DataFrames`.
+Tdqeq orchestrates a multi-stage vision pipeline to accurately detect, extract, and reconstruct tabular data from PDF documents. By decoupling layout detection (YOLOv10), topology classification, structure parsing (SlaNet-Plus / UniTable), and intelligent caption matching, Tdqeq transforms raw, unstructured PDF pages into structured `JSON` or `Pandas DataFrames` with no manual intervention.
 
 ## Core Capabilities
 
 - **Adaptive Model Routing**: Dynamically analyzes structural complexity and classification confidence to route tables to the optimal parsing model (e.g., fast processing via SlaNet-Plus vs. high-fidelity reasoning via UniTable).
+- **Intelligent Caption Matching**: Combines YOLO-detected caption regions with font-heuristic analysis to reliably associate the correct caption with each extracted table — even when captions are visually separated or span complex layouts.
 - **High-Throughput Inference**: Built from the ground up for batched GPU inference, enabling parallel processing of multi-page documents to maximize hardware utilization.
 - **Agentic Integration (MCP)**: Features a native Model Context Protocol (MCP) server, allowing persistent, in-memory execution and seamless integration into agentic workflows (e.g., Claude Desktop, Cursor, Hermes).
 - **Finetuning & Data Curation**: Ships with comprehensive utilities and Colab notebooks for generating supervised fine-tuning (SFT) datasets, facilitating domain adaptation for models like Qwen2.5-3B-Instruct.
 
 ## System Architecture
 
-The extraction pipeline operates in five distinct, loosely coupled stages:
+The extraction pipeline operates in four distinct, loosely coupled stages:
 
 1. **Rasterization & Extraction (`PDFLoader`)**: Rasterizes PDF pages at configurable DPIs while simultaneously extracting word-level bounding boxes and text blocks via PyMuPDF.
-2. **Layout Detection (`TableDetector`)**: Utilizes `doclayout_yolo` (YOLOv10) to accurately identify table boundaries and associated caption regions.
-3. **Spatial Intersection (`TextClipper`)**: Computes intersections between page-level text bounding boxes and table regions to isolate precise cellular text content.
-4. **Structural Parsing (`TableParser`)**: Classifies the table topology (Wired vs. Wireless) and reconstructs the HTML structure and cellular grid using `RapidTable`. Text is deterministically mapped to cells via center-point geometric matching.
+2. **Layout Detection (`TableDetector`)**: Utilizes `doclayout_yolo` (YOLOv10) to identify table boundaries and candidate caption regions within each page.
+3. **Caption Matching**: Correlates each detected table with its correct caption using a hybrid approach — combining spatial proximity of YOLO-detected caption boxes with font-size heuristics to resolve ambiguous or separated captions.
+4. **Spatial Intersection (`TextClipper`)**: Computes intersections between page-level text bounding boxes and table regions to isolate precise cellular text content.
+5. **Structural Parsing (`TableParser`)**: Classifies the table topology (Wired vs. Wireless) and routes it to the appropriate `RapidTable` model (SlaNet-Plus for speed, UniTable for complex structures) to reconstruct the HTML structure and cellular grid. Text is deterministically mapped to cells via center-point geometric matching.
 
 ## Installation
 

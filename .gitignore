@@ -35,6 +35,8 @@ htmlcov/
 
 # Environments
 .ipynb
+.json
+.pdf
 .env
 .venv
 env/
